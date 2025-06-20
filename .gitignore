@@ -1,0 +1,30 @@
+# Node.js
+node_modules/
+.env
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Frontend build output
+frontend/build/
+frontend/dist/
+frontend/.env # If you have a separate .env in frontend
+
+# Backend build/log output (if any)
+backend/build/
+backend/dist/
+backend/logs/
+backend/.env # If you have a separate .env in backend (though usually one root .env is enough)
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE specific files (e.g., VS Code, IntelliJ)
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# Testing artifacts
+coverage/
