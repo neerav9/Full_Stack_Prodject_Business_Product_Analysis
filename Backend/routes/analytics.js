@@ -5,11 +5,13 @@ const pool = require('../db'); // Your database connection pool
 const authenticateToken = require('../middleware/authenticate_token'); // For protecting the routes
 
 // --- POST Endpoint: Capture Analytics Events ---
-// This route will receive analytics events from authenticated users
-// and store them in the analytics_events table.
-router.post('/collect', authenticateToken, async (req, res) => {
+// This route will receive analytics events from dummy websites.
+// It does NOT require authenticateToken because the dummy websites are external clients
+// and send their user_website_id directly in the payload.
+router.post('/collect', async (req, res) => {
+    // Ensure req.body is an array, or convert a single object to an array for consistent processing
     const events = Array.isArray(req.body) ? req.body : [req.body];
-    const userId = req.user.id;
+    console.log('Backend /collect: Received events payload:', events);
 
     if (!events || events.length === 0) {
         return res.status(400).json({ message: 'No analytics events provided.' });
@@ -17,10 +19,10 @@ router.post('/collect', authenticateToken, async (req, res) => {
 
     try {
         const insertPromises = events.map(async (event) => {
-            const { event_type, event_details, session_id, visitor_id, referrer, user_agent, ip_address } = event;
+            const { user_website_id, event_type, event_details, session_id, visitor_id, referrer, user_agent } = event;
 
-            if (!event_type || !session_id || !visitor_id) {
-                console.warn('Skipping malformed event due to missing required fields:', event);
+            if (!user_website_id || !event_type || !session_id || !visitor_id) {
+                console.warn('Backend /collect: Skipping malformed event due to missing required fields (user_website_id, event_type, session_id, or visitor_id):', event);
                 return null;
             }
 
@@ -29,8 +31,9 @@ router.post('/collect', authenticateToken, async (req, res) => {
             await pool.query(
                 `INSERT INTO analytics_events (user_website_id, event_type, event_details, session_id, visitor_id, referrer, user_agent, ip_address)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [userId, event_type, detailsJson, session_id, visitor_id, referrer, user_agent, ip_address]
+                [user_website_id, event_type, detailsJson, session_id, visitor_id, referrer, user_agent, req.ip]
             );
+            console.log(`Backend /collect: Successfully inserted event type '${event_type}' for user_website_id '${user_website_id}'.`);
             return 1;
         });
 
@@ -44,38 +47,101 @@ router.post('/collect', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error inserting analytics events:', error);
+        console.error('Backend /collect: Error inserting analytics events:', error);
         res.status(500).json({ message: 'Server error while processing analytics data.', error: error.message });
     }
 });
-
-// --- GET Endpoint: Retrieve All Analytics Events for the Authenticated User with Pagination ---
-// Fetches all analytics events associated with the user's websites.
-// Example: /api/analytics/events?page=1&limit=10
-router.get('/events', authenticateToken, async (req, res) => {
-    const userId = req.user.id;
-    const page = parseInt(req.query.page) || 1; // Default to page 1
-    const limit = parseInt(req.query.limit) || 20; // Default to 20 items per page
-    const offset = (page - 1) * limit; // Calculate the offset for the SQL query
+const adjustDateForQuery = (dateString, type = 'start') => {
+    if (!dateString) return null; // If dateString is empty or null, return null
 
     try {
-        // First, get the total count of events for this user (for pagination metadata)
-        const [totalEventsResult] = await pool.query(
-            'SELECT COUNT(*) AS total FROM analytics_events WHERE user_website_id = ?',
-            [userId]
-        );
+        const date = new Date(dateString);
+        // Check for invalid date. If Date constructor produces an "Invalid Date", getTime() returns NaN.
+        if (isNaN(date.getTime())) {
+            console.warn(`Backend: adjustDateForQuery received an invalid date string: "${dateString}". Returning null.`);
+            return null;
+        }
+
+        if (type === 'start') {
+            // Set time to the very beginning of the day (00:00:00.000)
+            date.setHours(0, 0, 0, 0); // Use setHours for local timezone if timestamps are local
+            // If your DB stores UTC timestamps, use setUTCHours:
+            // date.setUTCHours(0, 0, 0, 0);
+        } else {
+            // Set time to the very end of the day (23:59:59.999)
+            date.setHours(23, 59, 59, 999); // Use setHours for local timezone if timestamps are local
+            // If your DB stores UTC timestamps, use setUTCHours:
+            // date.setUTCHours(23, 59, 59, 999);
+        }
+        // Return as ISO string. MySQL handles ISO strings well.
+        return date.toISOString().slice(0, 19).replace('T', ' '); // Format for MySQL DATETIME
+    } catch (e) {
+        console.error(`Backend: Error in adjustDateForQuery for "${dateString}":`, e);
+        return null;
+    }
+};
+
+
+// --- GET Endpoint: Retrieve All Analytics Events for the Authenticated User with Pagination ---
+router.get('/events', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+
+    // --- NEW: Extract startDate and endDate from query parameters ---
+    const { startDate, endDate } = req.query;
+    console.log(`Backend /events: Received startDate: "${startDate}", endDate: "${endDate}"`);
+    // --- END NEW ---
+
+    console.log(`Backend /events: Attempting to fetch events for user ID: ${userId}, page: ${page}, limit: ${limit}`);
+
+    try {
+        let countQuery = `SELECT COUNT(*) AS total FROM analytics_events WHERE user_website_id = ?`;
+        let dataQuery = `SELECT * FROM analytics_events WHERE user_website_id = ?`;
+        const queryParams = [userId]; // Parameters for both count and data queries
+        const countParams = [userId]; // Maintain separate params for count in case of different filtering in future
+
+        // --- NEW: Add date filtering to queries ---
+        const adjustedStartDate = adjustDateForQuery(startDate, 'start');
+        if (adjustedStartDate) {
+            dataQuery += ` AND timestamp >= ?`;
+            countQuery += ` AND timestamp >= ?`;
+            queryParams.push(adjustedStartDate);
+            countParams.push(adjustedStartDate);
+        }
+        const adjustedEndDate = adjustDateForQuery(endDate, 'end');
+        if (adjustedEndDate) {
+            dataQuery += ` AND timestamp <= ?`;
+            countQuery += ` AND timestamp <= ?`;
+            queryParams.push(adjustedEndDate);
+            countParams.push(adjustedEndDate);
+        }
+        // --- END NEW ---
+
+        // Fetch total count first (with date filters)
+        const [totalEventsResult] = await pool.query(countQuery, countParams);
         const totalEvents = totalEventsResult[0].total;
         const totalPages = Math.ceil(totalEvents / limit);
+        console.log(`Backend /events: Total events found for user ${userId} with filters: ${totalEvents}`);
 
-        // Then, fetch the paginated events
-        const [events] = await pool.query(
-            'SELECT * FROM analytics_events WHERE user_website_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?',
-            [userId, limit, offset]
-        );
 
-        if (events.length === 0 && totalEvents === 0) {
-            return res.status(200).json({ message: 'No analytics events found for this user.', data: [], pagination: { totalEvents: 0, totalPages: 0, currentPage: page, limit: limit } });
-        }
+        // Add ordering and pagination to the data query
+        dataQuery += ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+        queryParams.push(limit, offset);
+
+        console.log(`Backend /events DEBUG: Final SQL Data Query:`);
+        console.log(dataQuery);
+        console.log(`Backend /events DEBUG: Query Parameters for data:`, queryParams);
+
+
+        const [rows] = await pool.query(dataQuery, queryParams); // Execute data query
+        // Explicitly convert to a plain array if it's not already
+        const events = Array.isArray(rows) ? rows : Array.from(rows);
+
+        console.log(`Backend /events: Fetched ${events.length} events for user ${userId} (page ${page}).`);
+        console.log("Backend /events DEBUG: Content of 'events' directly from DB (after conversion):", events.length > 0 ? events[0] : 'No events'); // Log first event for brevity
+        console.log("Backend /events DEBUG: Type of 'events' directly from DB (after conversion):", typeof events, Array.isArray(events));
 
         const parsedEvents = events.map(event => {
             let parsedDetails = event.event_details;
@@ -83,7 +149,7 @@ router.get('/events', authenticateToken, async (req, res) => {
                 try {
                     parsedDetails = JSON.parse(event.event_details);
                 } catch (parseError) {
-                    console.error('Error parsing event_details JSON string (raw data will be passed):', parseError, 'Raw data:', event.event_details);
+                    console.error('Backend /events: Error parsing event_details JSON string (raw data will be passed):', parseError, 'Raw data:', event.event_details);
                 }
             }
             return {
@@ -91,6 +157,10 @@ router.get('/events', authenticateToken, async (req, res) => {
                 event_details: parsedDetails
             };
         });
+
+        console.log("Backend /events DEBUG: Content of 'parsedEvents' before sending:", parsedEvents.length > 0 ? parsedEvents[0] : 'No parsed events'); // Log first parsed event
+        console.log("Backend /events DEBUG: Length of 'parsedEvents' before sending:", parsedEvents.length);
+
 
         res.status(200).json({
             message: 'Analytics events fetched successfully.',
@@ -104,63 +174,124 @@ router.get('/events', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error fetching all analytics events with pagination:', error);
+        console.error('Backend /events: Error fetching all analytics events with pagination:', error);
         res.status(500).json({ message: 'Server error while fetching analytics data.', error: error.message });
     }
 });
 
-// --- GET Endpoint: Retrieve Filtered Analytics Events with Pagination ---
-// Allows clients to filter events by event_type, startDate, and endDate, and also paginate.
-// Example: /api/analytics/events/filter?eventType=page_view&startDate=2024-01-01&page=1&limit=5
-router.get('/events/filter', authenticateToken, async (req, res) => { // Corrected path to '/events/filter'
+
+// --- GET Endpoint: Popular Pages Summary ---
+// (You'll need to apply similar date filtering logic here)
+router.get('/summary/popular-pages', authenticateToken, async (req, res) => {
     const userId = req.user.id;
-    const { eventType, startDate, endDate } = req.query; // Filtering parameters
-    const page = parseInt(req.query.page) || 1; // Pagination parameter
-    const limit = parseInt(req.query.limit) || 20; // Pagination parameter
-    const offset = (page - 1) * limit; // Calculate offset
+    const { startDate, endDate, limit = 10 } = req.query;
+
+    console.log(`Backend /summary/popular-pages: Received startDate: "${startDate}", endDate: "${endDate}"`); // NEW debug log
+
+    console.log(`Backend /summary/popular-pages: Attempting to fetch popular pages for user ID: ${userId}`);
+
+    let query = `
+        SELECT JSON_UNQUOTE(JSON_EXTRACT(event_details, '$.url')) AS page_url,
+               JSON_UNQUOTE(JSON_EXTRACT(event_details, '$.page_name')) AS page_name,
+               COUNT(*) AS view_count
+        FROM analytics_events
+        WHERE user_website_id = ? AND event_type = 'page_view'
+    `;
+    const params = [userId];
+
+    // --- NEW: Add date filtering to popular pages query ---
+    const adjustedStartDate = adjustDateForQuery(startDate, 'start');
+    if (adjustedStartDate) {
+        query += ` AND timestamp >= ?`;
+        params.push(adjustedStartDate);
+    }
+    const adjustedEndDate = adjustDateForQuery(endDate, 'end');
+    if (adjustedEndDate) {
+        query += ` AND timestamp <= ?`;
+        params.push(adjustedEndDate);
+    }
+    // --- END NEW ---
+
+    query += `
+        GROUP BY page_url, page_name
+        ORDER BY view_count DESC
+        LIMIT ?
+    `;
+    params.push(parseInt(limit));
+
+    console.log(`Backend /popular-pages DEBUG: Final SQL Query:`); // NEW debug log
+    console.log(query); // NEW debug log
+    console.log(`Backend /popular-pages DEBUG: Query Parameters:`, params); // NEW debug log
+
+    try {
+        const [rows] = await pool.query(query, params);
+        const results = Array.isArray(rows) ? rows : Array.from(rows);
+
+        console.log(`Backend /summary/popular-pages: Fetched ${results.length} popular pages for user ${userId}.`);
+        console.log("Backend /popular-pages DEBUG: Content of 'results' directly from DB (after conversion):", results);
+        console.log("Backend /popular-pages DEBUG: Length of 'results' directly from DB (after conversion):", results.length);
+
+        res.status(200).json({
+            message: 'Most popular pages fetched successfully.',
+            data: results
+        });
+
+    } catch (error) {
+        console.error('Backend /summary/popular-pages: Error fetching most popular pages:', error);
+        res.status(500).json({ message: 'Server error while fetching popular pages.', error: error.message });
+    }
+});
+
+// --- GET Endpoint: Retrieve Filtered Analytics Events with Pagination ---
+router.get('/events/filter', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    const { eventType, startDate, endDate } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+
+    console.log(`Backend /events/filter: Fetching filtered events for user ID: ${userId}`);
 
     let countQuery = 'SELECT COUNT(*) AS total FROM analytics_events WHERE user_website_id = ?';
     let dataQuery = 'SELECT * FROM analytics_events WHERE user_website_id = ?';
-    const params = [userId]; // Parameters for data retrieval
-    const countParams = [userId]; // Parameters for count query (initially same as data params)
+    const params = [userId];
+    const countParams = [userId];
 
-    // Dynamically add conditions to the SQL queries based on provided filters.
     if (eventType) {
         dataQuery += ' AND event_type = ?';
-        countQuery += ' AND event_type = ?'; // Add to count query too!
+        countQuery += ' AND event_type = ?';
         params.push(eventType);
         countParams.push(eventType);
     }
 
     if (startDate) {
         dataQuery += ' AND timestamp >= ?';
-        countQuery += ' AND timestamp >= ?'; // Add to count query too!
+        countQuery += ' AND timestamp >= ?';
         params.push(startDate);
         countParams.push(startDate);
     }
 
     if (endDate) {
         dataQuery += ' AND timestamp <= ?';
-        countQuery += ' AND timestamp <= ?'; // Add to count query too!
+        countQuery += ' AND timestamp <= ?';
         params.push(endDate);
         countParams.push(endDate);
     }
 
-    dataQuery += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'; // Add pagination to data query
-    params.push(limit, offset); // Add limit and offset to data query parameters
+    dataQuery += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
 
     try {
-        // First, get the total count of filtered events
         const [totalEventsResult] = await pool.query(countQuery, countParams);
         const totalEvents = totalEventsResult[0].total;
         const totalPages = Math.ceil(totalEvents / limit);
 
-        // Then, fetch the paginated and filtered events
         const [events] = await pool.query(dataQuery, params);
 
-        if (events.length === 0 && totalEvents === 0) {
-            return res.status(200).json({ message: 'No matching analytics events found.', data: [], pagination: { totalEvents: 0, totalPages: 0, currentPage: page, limit: limit } });
-        }
+        // --- REMOVED THE IF CONDITION THAT SENT EMPTY DATA ---
+        // if (events.length === 0 && totalEvents === 0) {
+        //     return res.status(200).json({ message: 'No matching analytics events found.', data: [], pagination: { totalEvents: 0, totalPages: 0, currentPage: page, limit: limit } });
+        // }
 
         const parsedEvents = events.map(event => {
             let parsedDetails = event.event_details;
@@ -168,7 +299,7 @@ router.get('/events/filter', authenticateToken, async (req, res) => { // Correct
                 try {
                     parsedDetails = JSON.parse(event.event_details);
                 } catch (parseError) {
-                    console.error('Error parsing event_details JSON string (raw data will be passed):', parseError, 'Raw data:', event.event_details);
+                    console.error('Backend /events/filter: Error parsing event_details JSON string (raw data will be passed):', parseError, 'Raw data:', event.event_details);
                 }
             }
             return {
@@ -189,13 +320,18 @@ router.get('/events/filter', authenticateToken, async (req, res) => { // Correct
         });
 
     } catch (error) {
-        console.error('Error fetching filtered analytics events with pagination:', error);
+        console.error('Backend /events/filter: Error fetching filtered analytics events with pagination:', error);
         res.status(500).json({ message: 'Server error while fetching filtered analytics data.', error: error.message });
     }
 });
+
+
+// --- GET Endpoint: Total Page Views Summary ---
 router.get('/summary/page-views', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { startDate, endDate } = req.query;
+
+    console.log(`Backend /summary/page-views: Fetching total page views for user ID: ${userId}`);
 
     let query = `
         SELECT COUNT(*) AS total_page_views
@@ -216,8 +352,8 @@ router.get('/summary/page-views', authenticateToken, async (req, res) => {
     try {
         const [results] = await pool.query(query, params);
 
-        // results[0].total_page_views will be a string or number representing the count
         const totalPageViews = results[0] ? results[0].total_page_views : 0;
+        console.log(`Backend /summary/page-views: Total page views for user ${userId}: ${totalPageViews}`);
 
         res.status(200).json({
             message: 'Total page views fetched successfully.',
@@ -225,60 +361,18 @@ router.get('/summary/page-views', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error fetching total page views:', error);
-        // Pass error to centralized error handler
+        console.error('Backend /summary/page-views: Error fetching total page views:', error);
         res.status(500).json({ message: 'Server error while fetching total page views.', error: error.message });
     }
 });
-router.get('/summary/popular-pages', authenticateToken, async (req, res) => {
-    const userId = req.user.id;
-    const { startDate, endDate, limit = 10 } = req.query; // Default limit to 10
 
-    let query = `
-        SELECT JSON_UNQUOTE(JSON_EXTRACT(event_details, '$.url')) AS page_url,
-               COUNT(*) AS page_views_count
-        FROM analytics_events
-        WHERE user_website_id = ? AND event_type = 'page_view'
-    `;
-    const params = [userId];
 
-    if (startDate) {
-        query += ' AND timestamp >= ?';
-        params.push(startDate);
-    }
-    if (endDate) {
-        query += ' AND timestamp <= ?';
-        params.push(endDate);
-    }
-
-    query += `
-        GROUP BY page_url
-        ORDER BY page_views_count DESC
-        LIMIT ?
-    `;
-    params.push(parseInt(limit)); // Ensure limit is an integer
-
-    try {
-        const [results] = await pool.query(query, params);
-
-        if (results.length === 0) {
-            return res.status(200).json({ message: 'No popular pages data found for the given criteria.', data: [] });
-        }
-
-        res.status(200).json({
-            message: 'Most popular pages fetched successfully.',
-            data: results
-        });
-
-    } catch (error) {
-        console.error('Error fetching most popular pages:', error);
-        // Pass error to centralized error handler
-        res.status(500).json({ message: 'Server error while fetching popular pages.', error: error.message });
-    }
-});
+// --- GET Endpoint: Unique Visitors Summary ---
 router.get('/summary/unique-visitors', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { startDate, endDate } = req.query;
+
+    console.log(`Backend /summary/unique-visitors: Fetching unique visitors for user ID: ${userId}`);
 
     let query = `
         SELECT COUNT(DISTINCT visitor_id) AS unique_visitors_count
@@ -300,6 +394,7 @@ router.get('/summary/unique-visitors', authenticateToken, async (req, res) => {
         const [results] = await pool.query(query, params);
 
         const uniqueVisitorsCount = results[0] ? results[0].unique_visitors_count : 0;
+        console.log(`Backend /summary/unique-visitors: Unique visitors for user ${userId}: ${uniqueVisitorsCount}`);
 
         res.status(200).json({
             message: 'Unique visitors count fetched successfully.',
@@ -307,23 +402,30 @@ router.get('/summary/unique-visitors', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error fetching unique visitors count:', error);
+        console.error('Backend /summary/unique-visitors: Error fetching unique visitors count:', error);
         res.status(500).json({ message: 'Server error while fetching unique visitors count.', error: error.message });
     }
 });
+
+// --- GET Endpoint: Conversion Funnel Summary ---
+// This is where most of the significant changes are for correctness and clarity.
 router.get('/summary/conversion-funnel', authenticateToken, async (req, res) => {
-    const userId = req.user.id.toString(); // Ensure userId is string for consistency if needed
+    const userId = req.user.id;
     const { startDate, endDate } = req.query;
 
-    let params = [userId];
-    let dateFilter = '';
+    console.log(`Backend /summary/conversion-funnel: Fetching conversion funnel for user ID: ${userId}`);
+
+    // Define base parameters for all queries (userId and date filters)
+    let baseQueryParams = [userId];
+    let dateFilterClause = '';
+
     if (startDate) {
-        dateFilter += ' AND timestamp >= ?';
-        params.push(startDate);
+        dateFilterClause += ' AND timestamp >= ?';
+        baseQueryParams.push(startDate);
     }
     if (endDate) {
-        dateFilter += ' AND timestamp <= ?';
-        params.push(endDate);
+        dateFilterClause += ' AND timestamp <= ?';
+        baseQueryParams.push(endDate);
     }
 
     try {
@@ -331,28 +433,33 @@ router.get('/summary/conversion-funnel', authenticateToken, async (req, res) => 
         const [addToCartResults] = await pool.query(
             `SELECT COUNT(DISTINCT visitor_id) AS add_to_cart_count
              FROM analytics_events
-             WHERE user_website_id = ? AND event_type = 'add_to_cart'${dateFilter}`,
-            params
+             WHERE user_website_id = ? AND event_type = 'add_to_cart'${dateFilterClause}`,
+            baseQueryParams
         );
         const addToCartCount = addToCartResults[0] ? addToCartResults[0].add_to_cart_count : 0;
+        console.log(`Backend /summary/conversion-funnel: Add to Cart Count: ${addToCartCount}`);
 
         // Step 2: Count unique visitors who started checkout AND previously added to cart
-        // This query finds visitors who have both 'add_to_cart' and 'checkout_start' events
-        // within the specified user_website_id and date range.
+        // This query uses a JOIN or EXISTS to link 'checkout_start' events to prior 'add_to_cart' events by the same visitor.
         const [checkoutStartResults] = await pool.query(
-            `SELECT COUNT(DISTINCT a1.visitor_id) AS checkout_start_count
-             FROM analytics_events a1
-             WHERE a1.user_website_id = ? AND a1.event_type = 'checkout_start'${dateFilter}
-             AND EXISTS (
-                 SELECT 1
-                 FROM analytics_events a2
-                 WHERE a2.user_website_id = ? AND a2.visitor_id = a1.visitor_id AND a2.event_type = 'add_to_cart'${dateFilter}
-                 -- Optional: add a condition to ensure add_to_cart happened before checkout_start
-                 -- AND a2.timestamp <= a1.timestamp
-             )`,
-            [userId, ...params] // Pass userId again for the subquery
+            `SELECT COUNT(DISTINCT ae_checkout.visitor_id) AS checkout_start_count
+             FROM analytics_events ae_checkout
+             WHERE ae_checkout.user_website_id = ?
+               AND ae_checkout.event_type = 'checkout_start'${dateFilterClause}
+               AND EXISTS (
+                   SELECT 1
+                   FROM analytics_events ae_add_to_cart
+                   WHERE ae_add_to_cart.user_website_id = ?
+                     AND ae_add_to_cart.visitor_id = ae_checkout.visitor_id
+                     AND ae_add_to_cart.event_type = 'add_to_cart'${dateFilterClause}
+                     AND ae_add_to_cart.timestamp <= ae_checkout.timestamp -- Ensure add_to_cart happened before or at checkout_start
+               )`,
+            // Parameters for the main query (ae_checkout) and the subquery (ae_add_to_cart)
+            [...baseQueryParams, ...baseQueryParams] // This correctly passes userId and then all date filters twice
         );
         const checkoutStartCount = checkoutStartResults[0] ? checkoutStartResults[0].checkout_start_count : 0;
+        console.log(`Backend /summary/conversion-funnel: Checkout Start Count: ${checkoutStartCount}`);
+
 
         // Calculate conversion rate
         const conversionRate = addToCartCount > 0
@@ -369,8 +476,9 @@ router.get('/summary/conversion-funnel', authenticateToken, async (req, res) => 
         });
 
     } catch (error) {
-        console.error('Error fetching conversion funnel:', error);
+        console.error('Backend /summary/conversion-funnel: Error fetching conversion funnel:', error);
         res.status(500).json({ message: 'Server error while fetching conversion funnel.', error: error.message });
     }
 });
+
 module.exports = router;

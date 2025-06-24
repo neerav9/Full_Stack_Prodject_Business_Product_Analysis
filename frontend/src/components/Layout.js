@@ -19,17 +19,25 @@ function Layout({ children }) {
           <Link to="/" className="text-2xl font-bold">
             Analytics App
           </Link>
-          <div>
-            {!isAuthenticated ? (
+          {/* This is the corrected navigation section */}
+          <div className="flex items-center space-x-4"> {/* Removed duplicate <nav> tag here */}
+            {isAuthenticated ? ( // Check isAuthenticated from useAuth
               <>
-                <Link to="/login" className="mr-4 hover:text-gray-300">Login</Link>
-                <Link to="/register" className="hover:text-gray-300">Register</Link>
+                <span className="mr-4 text-gray-300">Welcome, {user ? user.username : 'User'}!</span>
+                <Link to="/profile" className="text-white hover:text-gray-300">Profile</Link>
+                {/* Analytics Link */}
+                <Link to="/analytics-dashboard" className="text-white hover:text-gray-300">Analytics</Link>
+                <button
+                  onClick={handleLogout}
+                  className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
+                >
+                  Logout
+                </button>
               </>
             ) : (
               <>
-                <span className="mr-4 text-gray-300">Welcome, {user ? user.username : 'User'}!</span>
-                <Link to="/profile" className="mr-4 hover:text-gray-300">Profile</Link>
-                <button onClick={handleLogout} className="hover:text-gray-300 focus:outline-none">Logout</button> {/* Added focus:outline-none */}
+                <Link to="/login" className="text-white hover:text-gray-300">Login</Link>
+                <Link to="/register" className="text-white hover:text-gray-300">Register</Link>
               </>
             )}
           </div>
