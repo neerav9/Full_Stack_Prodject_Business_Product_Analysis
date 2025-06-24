@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyTechBlog - The Future of AI in Web Development</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #e9ecef; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+        h1, h2 { color: #2c3e50; }
+        nav a { margin-right: 15px; text-decoration: none; color: #28a745; }
+        nav a:hover { text-decoration: underline; }
+        .article-content { line-height: 1.6; color: #34495e; }
+        .action-button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 0.9em; }
+        .action-button:hover { background-color: #218838; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav>
+                <a href="index.html">Home</a>
+                <a href="about.html">About</a>
+                <a href="contact.html">Contact</a>
+                <a href="post1.html">Article 1</a>
+                <a href="post2.html">Article 2</a>
+            </nav>
+            <h1>The Future of AI in Web Development</h1>
+            <p class="text-gray-600">Published on June 23, 2025 by TechGuru</p>
+        </header>
+
+        <div class="article-content">
+            <p>Artificial Intelligence (AI) is no longer a futuristic concept but a transformative force reshaping various industries, and web development is certainly no exception. From intelligent chatbots enhancing customer service to AI-powered design tools accelerating prototyping, the integration of AI is making web development more efficient, personalized, and robust.</p>
+
+            <p>One of the most significant impacts of AI in web development is in automating repetitive tasks. AI-driven code generators can write boilerplate code, freeing developers to focus on complex logic and innovative features. This not only speeds up the development cycle but also reduces the likelihood of human error, leading to more reliable applications.</p>
+
+            <p>Furthermore, AI is revolutionizing user experience (UX) design. AI tools can analyze vast amounts of user data to identify patterns, predict user behavior, and suggest design improvements that enhance engagement. Personalized content delivery, dynamic interfaces that adapt to user preferences, and intelligent search functionalities are becoming standard, all thanks to AI.</p>
+
+            <p>Looking ahead, we can expect even deeper integration. AI will likely play a role in advanced security protocols, automatically detecting and mitigating threats. It will also facilitate more sophisticated data analysis for marketing and business intelligence, giving website owners unparalleled insights into their audience.</p>
+
+            <p>While AI offers immense potential, it's crucial for developers to understand its limitations and ethical implications. The goal isn't to replace human developers but to augment their capabilities, allowing them to create richer, more intelligent web experiences. Embracing AI will be key for staying competitive in the evolving landscape of web development.</p>
+        </div>
+
+        <!-- New Event: Share Article Button -->
+        <button class="action-button" onclick="window.myAnalyticsTrack('share_article_click', { article_id: 'AI_WEB_DEV', platform: 'twitter' });">Share on Twitter</button>
+
+        <!-- New Event: Related Content Recommendation Click -->
+        <div style="margin-top: 25px; padding: 15px; background: #f0f8ff; border-left: 5px solid #add8e6; border-radius: 4px;">
+            <p class="text-gray-700 font-semibold">Related Article:</p>
+            <a href="post2.html" onclick="window.myAnalyticsTrack('related_article_click', { source_article: 'AI_WEB_DEV', recommended_article: 'NODE_JS_GUIDE' });" style="color: #007bff; text-decoration: none;">
+                Getting Started with Node.js - Read More
+            </a>
+        </div>
+    </div>
+
+    <!-- Analytics Tracking Script (copy from index.html) -->
+    <script>
+        (function() {
+            const ANALYTICS_API_URL = 'http://localhost:5000/api/analytics/collect';
+            const USER_WEBSITE_ID = 14; 
+
+            const getVisitorId = () => {
+                let visitorId = localStorage.getItem('_myanalytics_visitor_id');
+                if (!visitorId) {
+                    visitorId = 'visitor-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('_myanalytics_visitor_id', visitorId);
+                }
+                return visitorId;
+            };
+
+            const getSessionId = () => {
+                let sessionId = sessionStorage.getItem('_myanalytics_session_id');
+                if (!sessionId) {
+                    sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    sessionStorage.setItem('_myanalytics_session_id', sessionId);
+                }
+                return sessionId;
+            };
+
+            window.myAnalyticsTrack = async (eventType, eventDetails = {}) => {
+                if (typeof USER_WEBSITE_ID === 'undefined' || USER_WEBSITE_ID === null) {
+                    console.error('MyAnalytics: USER_WEBSITE_ID is not configured. Event not sent.');
+                    return;
+                }
+
+                try {
+                    const visitorId = getVisitorId();
+                    const sessionId = getSessionId();
+                    const userAgent = navigator.userAgent;
+                    const referrer = document.referrer;
+
+                    const eventData = {
+                        user_website_id: parseInt(USER_WEBSITE_ID),
+                        event_type: eventType,
+                        event_details: eventDetails,
+                        session_id: sessionId,
+                        visitor_id: visitorId,
+                        user_agent: userAgent,
+                        referrer: referrer
+                    };
+
+                    const response = await fetch(ANALYTICS_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(eventData)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.message || 'Unknown error'}`);
+                    }
+                    console.log(`MyAnalytics: Event '${eventType}' tracked successfully.`);
+                } catch (error) {
+                    console.error('MyAnalytics: Error tracking event:', error);
+                }
+            };
+
+            document.addEventListener('DOMContentLoaded', () => {
+                window.myAnalyticsTrack('page_view', {
+                    url: window.location.pathname,
+                    title: document.title,
+                    full_url: window.location.href,
+                    page_name: document.title
+                });
+            });
+        })();
+    </script>
+</body>
+</html>

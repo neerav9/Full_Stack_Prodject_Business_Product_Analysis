@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CreativePortfolio.me - Home</title>
+    <style>
+        body { font-family: 'Roboto', sans-serif; margin: 0; background-color: #f8f9fa; color: #343a40; }
+        .header { background-color: #343a40; color: white; padding: 20px 0; text-align: center; }
+        .header h1 { margin: 0; font-size: 2.5em; }
+        .nav { background-color: #495057; padding: 10px 0; text-align: center; }
+        .nav a { color: white; text-decoration: none; margin: 0 15px; font-size: 1.1em; }
+        .nav a:hover { text-decoration: underline; }
+        .container { max-width: 960px; margin: 20px auto; padding: 20px; background-color: white; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.05); }
+        .section { margin-bottom: 30px; }
+        .section h2 { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 5px; margin-bottom: 20px; }
+        .project-card { border: 1px solid #dee2e6; padding: 15px; margin-bottom: 15px; border-radius: 5px; background-color: #fff; text-align: left; }
+        .project-card h3 { color: #555; margin-top: 0; }
+        .project-card button { background-color: #28a745; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        .project-card button:hover { background-color: #218838; }
+        .contact-info p { margin: 5px 0; }
+        .social-link { display: inline-block; background-color: #007bff; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none; margin: 5px; }
+        .social-link:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>John Doe - Creative Portfolio</h1>
+        <p>Bringing Ideas to Life</p>
+    </div>
+    <div class="nav">
+        <a href="index.html">Home</a>
+        <a href="projects.html">Projects</a>
+        <a href="about.html">About</a>
+        <a href="contact.html">Contact</a>
+    </div>
+
+    <div class="container">
+        <div class="section">
+            <h2>Featured Work</h2>
+            <div class="project-card">
+                <h3>E-commerce Redesign</h3>
+                <p>A modern, user-friendly redesign for a popular online store. Focused on UX and conversion rates.</p>
+                <button onclick="window.myAnalyticsTrack('project_view', { project_id: 'ecom_redesign', project_name: 'E-commerce Redesign' });">View Details</button>
+            </div>
+            <div class="project-card">
+                <h3>Mobile App Concept</h3>
+                <p>Designed and prototyped a new mobile application for seamless task management.</p>
+                <button onclick="window.myAnalyticsTrack('project_view', { project_id: 'mobile_app_concept', project_name: 'Mobile App Concept' });">View Details</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>About Me</h2>
+            <p>I am a passionate web developer and UI/UX designer with a keen eye for detail and a love for creating intuitive and beautiful digital experiences.</p>
+            <button onclick="window.myAnalyticsTrack('button_click', { button_name: 'Download CV' });" style="background-color: #dc3545; color: white; padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer;">Download My CV</button>
+        </div>
+
+        <div class="section">
+            <h2>Get in Touch</h2>
+            <div class="contact-info">
+                <p>Email: <a href="mailto:john.doe@example.com" onclick="window.myAnalyticsTrack('email_click', { email_address: 'john.doe@example.com' });">john.doe@example.com</a></p>
+                <p>Phone: +1 (555) 123-4567</p>
+            </div>
+            <a href="https://linkedin.com/in/johndoe" target="_blank" class="social-link" onclick="window.myAnalyticsTrack('social_link_click', { platform: 'LinkedIn' });">LinkedIn</a>
+            <a href="https://github.com/johndoe" target="_blank" class="social-link" onclick="window.myAnalyticsTrack('social_link_click', { platform: 'GitHub' });">GitHub</a>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const ANALYTICS_API_URL = 'http://localhost:5000/api/analytics/collect';
+            const USER_WEBSITE_ID = 16; // <--- IMPORTANT: Replace with the actual user ID you registered!
+
+            const getVisitorId = () => {
+                let visitorId = localStorage.getItem('_myanalytics_visitor_id');
+                if (!visitorId) {
+                    visitorId = 'visitor-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('_myanalytics_visitor_id', visitorId);
+                }
+                return visitorId;
+            };
+
+            const getSessionId = () => {
+                let sessionId = sessionStorage.getItem('_myanalytics_session_id');
+                if (!sessionId) {
+                    sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    sessionStorage.setItem('_myanalytics_session_id', sessionId);
+                }
+                return sessionId;
+            };
+
+            window.myAnalyticsTrack = async (eventType, eventDetails = {}) => {
+                if (!USER_WEBSITE_ID || USER_WEBSITE_ID !== 16) {
+                    console.error('MyAnalytics: USER_WEBSITE_ID is not configured. Event not sent.');
+                    return;
+                }
+
+                try {
+                    const visitorId = getVisitorId();
+                    const sessionId = getSessionId();
+                    const userAgent = navigator.userAgent;
+                    const referrer = document.referrer;
+
+                    const eventData = {
+                        user_website_id: parseInt(USER_WEBSITE_ID),
+                        event_type: eventType,
+                        event_details: eventDetails,
+                        session_id: sessionId,
+                        visitor_id: visitorId,
+                        user_agent: userAgent,
+                        referrer: referrer
+                    };
+
+                    const response = await fetch(ANALYTICS_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(eventData)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.message || 'Unknown error'}`);
+                    }
+                    console.log(`MyAnalytics: Event '${eventType}' tracked successfully.`);
+                } catch (error) {
+                    console.error('MyAnalytics: Error tracking event:', error);
+                }
+            };
+
+            document.addEventListener('DOMContentLoaded', () => {
+                window.myAnalyticsTrack('page_view', {
+                    url: window.location.pathname + window.location.search,
+                    title: document.title,
+                    full_url: window.location.href,
+                    page_name: document.title || 'Portfolio Home'
+                });
+            });
+
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyTechBlog - Home</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #e9ecef; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+        h1, h2 { color: #2c3e50; }
+        .post-card { background: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; margin-bottom: 20px; border-radius: 6px; }
+        .post-card h3 { margin-top: 0; color: #007bff; }
+        .read-more { display: inline-block; background-color: #007bff; color: white; padding: 8px 12px; border-radius: 4px; text-decoration: none; margin-top: 10px; }
+        .read-more:hover { background-color: #0056b3; }
+        nav a { margin-right: 15px; text-decoration: none; color: #28a745; }
+        nav a:hover { text-decoration: underline; }
+        .feature-box { background: #e0f7fa; border: 1px solid #b2ebf2; padding: 15px; margin-top: 20px; border-radius: 6px; text-align: center; }
+        .feature-box button { background-color: #00bcd4; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; }
+        .feature-box button:hover { background-color: #00838f; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav>
+                <a href="index.html">Home</a>
+                <a href="about.html">About</a>
+                <a href="contact.html">Contact</a>
+                <a href="post1.html">Article 1</a>
+                <a href="post2.html">Article 2</a>
+            </nav>
+            <h1>Welcome to MyTechBlog!</h1>
+            <p>Your source for the latest in technology and coding.</p>
+        </header>
+
+        <h2>Recent Posts</h2>
+        <div class="post-card">
+            <h3>The Future of AI in Web Development</h3>
+            <p>Discover how artificial intelligence is set to revolutionize web development and its impact on modern applications.</p>
+            <a href="post1.html" class="read-more" onclick="window.myAnalyticsTrack('article_click', { article_id: 'AI_WEB_DEV', article_title: 'The Future of AI in Web Development' });">Read More</a>
+        </div>
+        <div class="post-card">
+            <h3>Getting Started with Node.js</h3>
+            <p>A beginner's guide to building scalable backend applications with Node.js and Express.js.</p>
+            <a href="post2.html" class="read-more" onclick="window.myAnalyticsTrack('article_click', { article_id: 'NODE_JS_GUIDE', article_title: 'Getting Started with Node.js' });">Read More</a>
+        </div>
+
+        <button onclick="window.myAnalyticsTrack('newsletter_subscribe', { method: 'popup_trigger' });" style="background-color: #ffc107; color: #333; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px;">
+            Subscribe to Newsletter
+        </button>
+
+        <!-- New Event: Feature Highlight Click -->
+        <div class="feature-box">
+            <h3>Explore Our New Cloud Security Features!</h3>
+            <p>Learn how MyTechBlog is enhancing data protection.</p>
+            <button onclick="window.myAnalyticsTrack('feature_highlight_click', { feature_name: 'Cloud Security', section: 'homepage_banner' });">
+                Discover More
+            </button>
+        </div>
+    </div>
+
+    <!-- Analytics Tracking Script -->
+    <script>
+        (function() {
+            const ANALYTICS_API_URL = 'http://localhost:5000/api/analytics/collect';
+            const USER_WEBSITE_ID = 14; // IMPORTANT: Keep this as 14 for Prabhas's dashboard
+
+            const getVisitorId = () => {
+                let visitorId = localStorage.getItem('_myanalytics_visitor_id');
+                if (!visitorId) {
+                    visitorId = 'visitor-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('_myanalytics_visitor_id', visitorId);
+                }
+                return visitorId;
+            };
+
+            const getSessionId = () => {
+                let sessionId = sessionStorage.getItem('_myanalytics_session_id');
+                if (!sessionId) {
+                    sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    sessionStorage.setItem('_myanalytics_session_id', sessionId);
+                }
+                return sessionId;
+            };
+
+            window.myAnalyticsTrack = async (eventType, eventDetails = {}) => {
+                if (typeof USER_WEBSITE_ID === 'undefined' || USER_WEBSITE_ID === null) {
+                    console.error('MyAnalytics: USER_WEBSITE_ID is not configured. Event not sent.');
+                    return;
+                }
+
+                try {
+                    const visitorId = getVisitorId();
+                    const sessionId = getSessionId();
+                    const userAgent = navigator.userAgent;
+                    const referrer = document.referrer;
+
+                    const eventData = {
+                        user_website_id: parseInt(USER_WEBSITE_ID),
+                        event_type: eventType,
+                        event_details: eventDetails,
+                        session_id: sessionId,
+                        visitor_id: visitorId,
+                        user_agent: userAgent,
+                        referrer: referrer
+                    };
+
+                    const response = await fetch(ANALYTICS_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(eventData)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.message || 'Unknown error'}`);
+                    }
+                    console.log(`MyAnalytics: Event '${eventType}' tracked successfully.`);
+                } catch (error) {
+                    console.error('MyAnalytics: Error tracking event:', error);
+                }
+            };
+
+            // Initial page_view event on DOMContentLoaded
+            document.addEventListener('DOMContentLoaded', () => {
+                window.myAnalyticsTrack('page_view', {
+                    url: window.location.pathname, // Use pathname for cleaner URL tracking
+                    title: document.title,
+                    full_url: window.location.href,
+                    page_name: document.title // Use document.title as page_name
+                });
+            });
+
+            // Handle navigation clicks for page_view events without full page reload
+            // This is a basic example; for complex SPAs, you'd integrate with router changes.
+            document.querySelectorAll('nav a').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    // Prevent default only if it's an internal link handled by client-side routing
+                    // For this simple example, we let the default behavior (full reload) occur.
+                    // This ensures a new page_view event is fired on each page load.
+                });
+            });
+
+        })();
+    </script>
+</body>
+</html>

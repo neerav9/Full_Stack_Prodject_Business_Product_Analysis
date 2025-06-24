@@ -1,0 +1,102 @@
+// analytics-tracker-snippet.js (Conceptual file, will be embedded directly)
+// this will be given to the webiste owners to integrate in their website code 
+
+
+
+
+(function() {
+    // --- Configuration (These values would be provided by YOUR analytics platform to the client) ---
+    const ANALYTICS_API_URL = 'http://localhost:5000/api/analytics/collect'; // Your backend endpoint
+    const USER_WEBSITE_ID = 'REPLACE_WITH_ACTUAL_USER_ID'; // THIS MUST BE REPLACED FOR EACH DUMMY WEBSITE
+                                                           // This is the ID of the user in YOUR 'users' table
+                                                           // who 'owns' this external website.
+
+    // --- Helper to get/set Visitor ID ---
+    const getVisitorId = () => {
+        let visitorId = localStorage.getItem('_myanalytics_visitor_id');
+        if (!visitorId) {
+            visitorId = 'visitor-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('_myanalytics_visitor_id', visitorId);
+        }
+        return visitorId;
+    };
+
+    // --- Helper to get/set Session ID ---
+    const getSessionId = () => {
+        let sessionId = sessionStorage.getItem('_myanalytics_session_id');
+        if (!sessionId) {
+            sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            sessionStorage.setItem('_myanalytics_session_id', sessionId);
+        }
+        return sessionId;
+    };
+
+    // --- Main Analytics Tracking Function ---
+    window.myAnalyticsTrack = async (eventType, eventDetails = {}) => {
+        // Ensure user_website_id is set
+        if (!USER_WEBSITE_ID || USER_WEBSITE_ID === 'REPLACE_WITH_ACTUAL_USER_ID') {
+            console.error('MyAnalytics: USER_WEBSITE_ID is not configured. Event not sent.');
+            return;
+        }
+
+        try {
+            const visitorId = getVisitorId();
+            const sessionId = getSessionId();
+            const userAgent = navigator.userAgent;
+            const referrer = document.referrer;
+            // IP Address will be captured by your backend
+
+            const eventData = {
+                user_website_id: parseInt(USER_WEBSITE_ID), // Send the specific website owner's ID
+                event_type: eventType,
+                event_details: eventDetails,
+                session_id: sessionId,
+                visitor_id: visitorId,
+                user_agent: userAgent,
+                referrer: referrer
+            };
+
+            // Using fetch API as axios might not be available on client websites
+            const response = await fetch(ANALYTICS_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(eventData)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.message || 'Unknown error'}`);
+            }
+
+            console.log(`MyAnalytics: Event '${eventType}' tracked successfully.`);
+
+        } catch (error) {
+            console.error('MyAnalytics: Error tracking event:', error);
+        }
+    };
+
+    // --- Auto-track Page View on load ---
+    document.addEventListener('DOMContentLoaded', () => {
+        window.myAnalyticsTrack('page_view', {
+            url: window.location.pathname + window.location.search,
+            title: document.title,
+            full_url: window.location.href,
+            page_name: document.title || 'Unknown Page' // Use document title as page name
+        });
+    });
+
+    // --- You could add error tracking here too
+    window.addEventListener('error', (event) => {
+        window.myAnalyticsTrack('error', {
+            message: event.message,
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+            error_stack: event.error ? event.error.stack : 'N/A'
+        });
+    });
+
+})();

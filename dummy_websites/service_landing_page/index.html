@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AwesomeServices.co - Get Started</title>
+    <style>
+        body { font-family: Arial, Helvetica, sans-serif; margin: 20px; background-color: #f0f2f5; text-align: center; }
+        .container { max-width: 700px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { color: #1a73e8; }
+        p { color: #5f6368; line-height: 1.6; }
+        .cta-button { background-color: #1a73e8; color: white; padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1em; margin-top: 25px; display: inline-block; text-decoration: none; }
+        .cta-button:hover { background-color: #1565c0; }
+        .contact-form { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .contact-form input, .contact-form textarea { width: calc(100% - 20px); padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; }
+        .contact-form button { background-color: #34a853; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        .contact-form button:hover { background-color: #2e8b46; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simplify Your Workflow with AwesomeServices!</h1>
+        <p>We provide cutting-edge solutions for businesses of all sizes. Get started today and transform your operations.</p>
+        <a href="#form" class="cta-button" onclick="window.myAnalyticsTrack('cta_click', { cta_name: 'Get Started Button', destination: 'contact_form' });">Get Started Now</a>
+
+        <div class="contact-form" id="form">
+            <h2>Request a Demo</h2>
+            <form onsubmit="event.preventDefault(); submitDemoForm();">
+                <input type="text" placeholder="Your Name" required>
+                <input type="email" placeholder="Your Email" required>
+                <textarea placeholder="Your Message (Optional)" rows="4"></textarea>
+                <button type="submit">Submit Request</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const ANALYTICS_API_URL = 'http://localhost:5000/api/analytics/collect';
+            const USER_WEBSITE_ID = 17; // <--- IMPORTANT: Replace with an actual user ID (e.g., 3)
+
+            const getVisitorId = () => {
+                let visitorId = localStorage.getItem('_myanalytics_visitor_id');
+                if (!visitorId) {
+                    visitorId = 'visitor-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('_myanalytics_visitor_id', visitorId);
+                }
+                return visitorId;
+            };
+
+            const getSessionId = () => {
+                let sessionId = sessionStorage.getItem('_myanalytics_session_id');
+                if (!sessionId) {
+                    sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    sessionStorage.setItem('_myanalytics_session_id', sessionId);
+                }
+                return sessionId;
+            };
+
+            window.myAnalyticsTrack = async (eventType, eventDetails = {}) => {
+                if (!USER_WEBSITE_ID || USER_WEBSITE_ID !== 17) {
+                    console.error('MyAnalytics: USER_WEBSITE_ID is not configured. Event not sent.');
+                    return;
+                }
+
+                try {
+                    const visitorId = getVisitorId();
+                    const sessionId = getSessionId();
+                    const userAgent = navigator.userAgent;
+                    const referrer = document.referrer;
+
+                    const eventData = {
+                        user_website_id: parseInt(USER_WEBSITE_ID),
+                        event_type: eventType,
+                        event_details: eventDetails,
+                        session_id: sessionId,
+                        visitor_id: visitorId,
+                        user_agent: userAgent,
+                        referrer: referrer
+                    };
+
+                    const response = await fetch(ANALYTICS_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(eventData)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.message || 'Unknown error'}`);
+                    }
+                    console.log(`MyAnalytics: Event '${eventType}' tracked successfully.`);
+                } catch (error) {
+                    console.error('MyAnalytics: Error tracking event:', error);
+                }
+            };
+
+            document.addEventListener('DOMContentLoaded', () => {
+                window.myAnalyticsTrack('page_view', {
+                    url: window.location.pathname + window.location.search,
+                    title: document.title,
+                    full_url: window.location.href,
+                    page_name: document.title || 'Landing Page'
+                });
+            });
+
+            // Function to handle form submission
+            function submitDemoForm() {
+                window.myAnalyticsTrack('form_submit', {
+                    form_name: 'Demo Request Form',
+                    form_fields: ['name', 'email', 'message'] // Simplified, could capture actual values
+                });
+                alert('Demo request submitted! (Check console for analytics event)');
+                // Normally, you'd send form data to a server here.
+            }
+
+            window.submitDemoForm = submitDemoForm; // Expose to global scope for form's onsubmit
+        })();
+    </script>
+</body>
+</html>
